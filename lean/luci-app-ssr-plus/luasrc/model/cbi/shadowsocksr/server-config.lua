@@ -11,23 +11,19 @@ local uuid = luci.sys.exec("cat /proc/sys/kernel/random/uuid")
 local http = luci.http
 local ucursor = require "luci.model.uci".cursor()
 
+local server_table = {}
 local encrypt_methods = {
-	"rc4-md5",
-	"rc4-md5-6",
-	"rc4",
+	"none",
 	"table",
-	"aes-128-gcm",
-	"aes-192-gcm",
-	"aes-256-gcm",
+	"rc4",
+	"rc4-md5-6",
+	"rc4-md5",
 	"aes-128-cfb",
 	"aes-192-cfb",
 	"aes-256-cfb",
 	"aes-128-ctr",
 	"aes-192-ctr",
-	"aes-256-ctr",
-	"aes-128-gcm",
-	"aes-192-gcm",
-	"aes-256-gcm",	
+	"aes-256-ctr",	
 	"bf-cfb",
 	"camellia-128-cfb",
 	"camellia-192-cfb",
@@ -40,18 +36,60 @@ local encrypt_methods = {
 	"salsa20",
 	"chacha20",
 	"chacha20-ietf",
+}
+
+local encrypt_methods_ss = {
+	-- aead
+	"aes-128-gcm",
+	"aes-192-gcm",
+	"aes-256-gcm",
 	"chacha20-ietf-poly1305",
 	"xchacha20-ietf-poly1305",
+	-- stream
+	"table",
+	"rc4",
+	"rc4-md5",
+	"aes-128-cfb",
+	"aes-192-cfb",
+	"aes-256-cfb",
+	"aes-128-ctr",
+	"aes-192-ctr",
+	"aes-256-ctr",
+	"bf-cfb",
+	"camellia-128-cfb",
+	"camellia-192-cfb",
+	"camellia-256-cfb",
+	"salsa20",
+	"chacha20",
+	"chacha20-ietf",
 }
 
 local protocol = {
 	"origin",
+	"verify_deflate",
+	"auth_sha1_v4",
+	"auth_aes128_sha1",
+	"auth_aes128_md5",
+	"auth_chain_a",
+	"auth_chain_b",
+	"auth_chain_c",
+	"auth_chain_d",
+	"auth_chain_e",
+	"auth_chain_f",
 }
 
-local obfs = {
+obfs = {
 	"plain",
 	"http_simple",
 	"http_post",
+	"random_head",
+	"tls1.2_ticket_auth",
+}
+
+local obfs_opts = {
+	"none",
+	"http",
+	"tls",
 }
 
 local securitys = {
@@ -62,9 +100,10 @@ local securitys = {
 }
 
 
+
 m = Map(shadowsocksr, translate("Edit ShadowSocksR Server"))
 
-m.redirect = luci.dispatcher.build_url("admin/services/shadowsocksr/server")
+m.redirect = luci.dispatcher.build_url("admin/vpn/shadowsocksr/server")
 if m.uci:get(shadowsocksr, sid) ~= "server_config" then
 	luci.http.redirect(m.redirect) 
 	return
@@ -94,57 +133,7 @@ o:value("v2ray", translate("V2Ray"))
 end
 o.description = translate("Using incorrect encryption mothod may causes service fail to start")
 
-use_conf_file = s:option(Flag, "use_conf_file", translate("Use Config File"), translate("Use Config File"))	
-use_conf_file:depends("type", "v2ray")	
-use_conf_file.rmempty = false	
 
-conf_file_path = s:option(Value, "conf_file_path", translate("Config File Path"),	
-	translate("Add the file name. JSON after the path."))	
-conf_file_path.default = "/etc/shadowsocksr/"	
-conf_file_path:depends("use_conf_file", 1)	
-
-upload_conf = s:option(FileUpload, "")	
-upload_conf.template = "cbi/other_upload2"	
-upload_conf:depends("use_conf_file", 1)	
-
-um = s:option(DummyValue, "", nil)	
-um.template = "cbi/other_dvalue"	
-um:depends("use_conf_file", 1)	
-
-local conf_dir, fd	
-conf_dir = "/etc/shadowsocksr/"	
-nixio.fs.mkdir(conf_dir)	
-http.setfilehandler(	
-	function(meta, chunk, eof)	
-		if not fd then	
-			if not meta then return end	
-
- 			if	meta and chunk then fd = nixio.open(conf_dir .. meta.file, "w") end	
-
- 			if not fd then	
-				um.value = translate("Create upload file error.")	
-				return	
-			end	
-		end	
-		if chunk and fd then	
-			fd:write(chunk)	
-		end	
-		if eof and fd then	
-			fd:close()	
-			fd = nil	
-			um.value = translate("File saved to") .. ' "/etc/shadowsocksr/' .. meta.file .. '"'	
-			ucursor:set("v2ray","v2ray","conf_file_path","/etc/shadowsocksr/" .. meta.file)	
-			ucursor:commit("v2ray")	
-		end	
-	end	
-)	
-
-if luci.http.formvalue("upload") then	
-	local f = luci.http.formvalue("ulfile")	
-	if #f <= 0 then	
-		um.value = translate("No specify upload file.")	
-	end	
-end
 
 o = s:option(Flag, "ipv4_ipv6", translate("Enabling IPv6 server"))
 o.default = 0
@@ -171,6 +160,8 @@ for _, v in ipairs(encrypt_methods) do o:value(v) end
 o.rmempty = true
 o:depends("type", "ssr")
 o:depends("type", "ss")
+
+
 
 o = s:option(ListValue, "plugin", translate("plugin"))
 o:value("none", "None")
@@ -205,6 +196,7 @@ o:depends("type", "ssr")
 
 o = s:option(Value, "obfs_param", translate("Obfs param(optional)"))
 o:depends("type", "ssr")
+
 
 -- AlterId
 o = s:option(Value, "alter_id", translate("AlterId"))
@@ -384,3 +376,4 @@ o.rmempty = true
 o:depends("type", "ssr")
 
 return m
+
